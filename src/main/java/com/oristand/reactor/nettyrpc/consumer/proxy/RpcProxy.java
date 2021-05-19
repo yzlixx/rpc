@@ -1,5 +1,6 @@
 package com.oristand.reactor.nettyrpc.consumer.proxy;
 
+import com.oristand.reactor.nettyrpc.consumer.factory.ClientFactory;
 import com.oristand.reactor.nettyrpc.protocol.RequestBody;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
@@ -17,6 +18,7 @@ import io.netty.handler.codec.serialization.ObjectEncoder;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.InetSocketAddress;
 
 /**
  * @author lixiaoxuan
@@ -71,34 +73,17 @@ public class RpcProxy {
             body.setMethodName(method.getName());
             body.setParamsType(method.getParameterTypes());
 
-
-            NioEventLoopGroup group = new NioEventLoopGroup();
-            final  RpcConsumerHandler rpcConsumerHandler = new RpcConsumerHandler();
+            // 2.连接池获取 channel
+            ClientFactory factory = ClientFactory.getFactory();
+            NioSocketChannel channel = factory.getClient(new InetSocketAddress("localhost", 8080));
             try {
-                Bootstrap bs = new Bootstrap();
-                ChannelFuture furture = bs.group(group)
-                        .channel(NioSocketChannel.class)
-                        .option(ChannelOption.TCP_NODELAY,true)
-                        .handler(new ChannelInitializer<NioSocketChannel>() {
-                            @Override
-                            protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
-
-                                ChannelPipeline pipeline = nioSocketChannel.pipeline();
-                                pipeline.addLast(new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, 4, 0, 4));
-                                pipeline.addLast(new LengthFieldPrepender(4));
-                                pipeline.addLast("encoder", new ObjectEncoder());
-                                pipeline.addLast("decoder", new ObjectDecoder(Integer.MAX_VALUE, ClassResolvers.cacheDisabled(null)));
-                                pipeline.addLast(rpcConsumerHandler);
-                            }
-                        }).connect("localhost", 8080);
-                ChannelFuture f = furture.sync();
-                f.channel().writeAndFlush(body).sync();
-                f.channel().closeFuture().sync();
+                channel.writeAndFlush(body).sync();
+                channel.closeFuture().sync();
             } catch (Exception e) {
-                group.shutdownGracefully();
+                e.printStackTrace();
             }
 
-
+            RpcConsumerHandler rpcConsumerHandler = new RpcConsumerHandler();
             return rpcConsumerHandler.getResponse();
         }
     }

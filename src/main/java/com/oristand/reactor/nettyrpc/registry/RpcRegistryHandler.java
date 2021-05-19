@@ -39,32 +39,31 @@ public class RpcRegistryHandler extends ChannelInboundHandlerAdapter {
         return rpcRegistryHandler;
     }
 
-    @Override
-    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-        System.out.println("server registerd...");
-        ctx.channel().read();
-    }
-
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         //消息处理
         Object result = new Object();
-        RequestBody requestBody  = (RequestBody) msg;
-        if(registryMap.containsKey(requestBody.getClassName())){
-            Class<?> clazz = registryMap.get(requestBody.getClassName());
-            Method method = clazz.getDeclaredMethod(requestBody.getMethodName(), requestBody.getParamsType());
-            result = method.invoke(clazz.newInstance(),requestBody.getArgs());
-        }
-        System.out.println("provider 已经接受到消息");
-        ctx.writeAndFlush(result);
-        ctx.close();
+        RequestBody requestBody = (RequestBody) msg;
+        String ioThreadName = Thread.currentThread().getName();
+        //使用netty的eventloop处理业务
+        ctx.executor().execute(() -> {
+            try {
+                if (registryMap.containsKey(requestBody.getClassName())) {
+                    Class<?> clazz = registryMap.get(requestBody.getClassName());
+                    Method method = clazz.getDeclaredMethod(requestBody.getMethodName(), requestBody.getParamsType());
+                    Object responseMsg = method.invoke(clazz.newInstance(), requestBody.getArgs());
+                    String execThreadName = Thread.currentThread().getName();
+                    String s = "io thread: " + ioThreadName + " exec thread: " + execThreadName + " from args:" + requestBody.getArgs()[0];
+                    System.out.println("********"+s+"*******");
+                    ctx.writeAndFlush(responseMsg);
+                    ctx.close();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
 
-    }
-
-   @Override
-    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-       System.out.println("*******************");
     }
 
     private static void scannerClass(String packageName) {
